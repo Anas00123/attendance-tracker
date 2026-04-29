@@ -821,7 +821,15 @@ async function cloudReadUser(userId) {
   if (!res.ok) return null;
   const payload = await res.json();
   if (!payload || payload.result == null) return null;
-  return payload.result;
+  const data = payload.result;
+  if (typeof data === 'string') {
+    try {
+      return JSON.parse(data);
+    } catch {
+      return null;
+    }
+  }
+  return data;
 }
 
 async function cloudWriteUser(userId, data) {
