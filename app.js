@@ -184,38 +184,38 @@ async function handleLogin() {
   loginBtn.disabled = true;
   loginBtn.textContent = 'Please wait...';
 
+  const existing = users[userId];
+  let cloudUser = null;
   try {
-    const existing = users[userId];
-    let cloudUser = null;
-    try {
-      cloudUser = await cloudReadUser(userId);
-    } catch (e) {
-      console.warn('Cloud sync unavailable during login. Continuing with local data.', e);
-    }
+    cloudUser = await cloudReadUser(userId);
+  } catch (e) {
+    console.warn('Cloud sync unavailable during login. Continuing with local data.', e);
+  }
 
-    if (cloudUser) {
-      if (cloudUser.password !== password) { showError('Incorrect password.'); return; }
-      if (cloudUser.name !== name)         { showError('Name does not match this User ID.'); return; }
+  if (cloudUser && typeof cloudUser === 'object') {
+    if (cloudUser.password !== password) { showError('Incorrect password.'); loginBtn.disabled = false; loginBtn.textContent = 'Login / Register'; return; }
+    if (cloudUser.name !== name)         { showError('Name does not match this User ID.'); loginBtn.disabled = false; loginBtn.textContent = 'Login / Register'; return; }
 
-      users[userId] = { name: cloudUser.name, password: cloudUser.password };
-      save(SK.USERS, users);
-      replaceUserRecords(userId, Array.isArray(cloudUser.records) ? cloudUser.records : []);
-    } else if (!existing) {
-      users[userId] = { name, password };
-      save(SK.USERS, users);
-      await cloudWriteUser(userId, { name, password, records: getUserRecords(userId) });
-    } else {
-      if (existing.password !== password) { showError('Incorrect password.'); return; }
-      if (existing.name !== name)         { showError('Name does not match this User ID.'); return; }
-      await cloudWriteUser(userId, { name: existing.name, password: existing.password, records: getUserRecords(userId) });
-    }
+    users[userId] = { name: cloudUser.name, password: cloudUser.password };
+    save(SK.USERS, users);
+    replaceUserRecords(userId, Array.isArray(cloudUser.records) ? cloudUser.records : []);
+  } else if (!existing) {
+    users[userId] = { name, password };
+    save(SK.USERS, users);
+    void cloudWriteUser(userId, { name, password, records: getUserRecords(userId) });
+  } else {
+    if (existing.password !== password) { showError('Incorrect password.'); loginBtn.disabled = false; loginBtn.textContent = 'Login / Register'; return; }
+    if (existing.name !== name)         { showError('Name does not match this User ID.'); loginBtn.disabled = false; loginBtn.textContent = 'Login / Register'; return; }
+    void cloudWriteUser(userId, { name: existing.name, password: existing.password, records: getUserRecords(userId) });
+  }
 
+  try {
     session = { userId, name: users[userId].name };
     save(SK.SESSION, session);
     showDash();
   } catch (e) {
-    console.warn('Login sync error:', e);
-    showError('Could not sync data right now. Please check internet and try again.');
+    console.warn('Login failed on this browser:', e);
+    showError('Login failed in this browser. Please allow site storage and try again.');
   } finally {
     loginBtn.disabled = false;
     loginBtn.textContent = 'Login / Register';
