@@ -14,6 +14,8 @@ const CFG = {
   NOTIF_DAYS:        [0,1,2,3,4,5,6], // 0=Sun … 6=Sat (all days)
   NOTIF_SNOOZE_MIN:  15,        // Snooze duration in minutes
   NOTIF_CHECK_MS:    30_000,    // Check every 30 seconds
+  CLOUD_SYNC:        true,      // Sync user data across browsers
+  CLOUD_BASE_URL:    'https://www.jsonstore.io',
 };
 
 const toMin = hhmm => { const [h,m] = hhmm.split(':').map(Number); return h*60+m; };
@@ -94,7 +96,7 @@ function init() {
   todayDate.textContent = formatDateFull(todayKey());
 
   // Core events
-  loginBtn.addEventListener('click', handleLogin);
+  loginBtn.addEventListener('click', () => { void handleLogin(); });
   togglePass.addEventListener('click', () => {
     loginPassword.type = loginPassword.type === 'password' ? 'text' : 'password';
   });
@@ -170,7 +172,7 @@ function logout() {
 // ─────────────────────────────────────────────────────────────────────────────
 // LOGIN / REGISTER
 // ─────────────────────────────────────────────────────────────────────────────
-function handleLogin() {
+async function handleLogin() {
   const userId   = loginId.value.trim();
   const name     = loginName.value.trim();
   const password = loginPassword.value;
@@ -178,18 +180,41 @@ function handleLogin() {
   if (!userId || !name || !password) { showError('Please fill in all fields.'); return; }
   if (password.length < 4)           { showError('Password must be at least 4 characters.'); return; }
 
-  const existing = users[userId];
-  if (!existing) {
-    users[userId] = { name, password };
-    save(SK.USERS, users);
-  } else {
-    if (existing.password !== password) { showError('Incorrect password.'); return; }
-    if (existing.name !== name)         { showError('Name does not match this User ID.'); return; }
-  }
+  loginError.classList.add('hidden');
+  loginBtn.disabled = true;
+  loginBtn.textContent = 'Please wait...';
 
-  session = { userId, name: users[userId].name };
-  save(SK.SESSION, session);
-  showDash();
+  try {
+    const existing = users[userId];
+    const cloudUser = await cloudReadUser(userId);
+
+    if (cloudUser) {
+      if (cloudUser.password !== password) { showError('Incorrect password.'); return; }
+      if (cloudUser.name !== name)         { showError('Name does not match this User ID.'); return; }
+
+      users[userId] = { name: cloudUser.name, password: cloudUser.password };
+      save(SK.USERS, users);
+      replaceUserRecords(userId, Array.isArray(cloudUser.records) ? cloudUser.records : []);
+    } else if (!existing) {
+      users[userId] = { name, password };
+      save(SK.USERS, users);
+      await cloudWriteUser(userId, { name, password, records: getUserRecords(userId) });
+    } else {
+      if (existing.password !== password) { showError('Incorrect password.'); return; }
+      if (existing.name !== name)         { showError('Name does not match this User ID.'); return; }
+      await cloudWriteUser(userId, { name: existing.name, password: existing.password, records: getUserRecords(userId) });
+    }
+
+    session = { userId, name: users[userId].name };
+    save(SK.SESSION, session);
+    showDash();
+  } catch (e) {
+    console.warn('Login sync error:', e);
+    showError('Could not sync data right now. Please check internet and try again.');
+  } finally {
+    loginBtn.disabled = false;
+    loginBtn.textContent = 'Login / Register';
+  }
 }
 
 function showError(msg) {
@@ -478,6 +503,7 @@ function clockOut() {
   rec.note     = result.note || rec.note || '';
 
   save(SK.RECORDS, records);
+  void syncCurrentUserToCloud();
   renderToday(); render();
 }
 
@@ -703,6 +729,7 @@ function clearMonth() {
   if (!confirm(`Delete all ${count} record(s) for ${month}? This cannot be undone.`)) return;
   records = records.filter(r => !(r.userId === session.userId && r.date.startsWith(month)));
   save(SK.RECORDS, records);
+  void syncCurrentUserToCloud();
   renderToday(); render();
 }
 
@@ -718,6 +745,7 @@ function upsert(rec) {
   if (idx >= 0) records[idx] = { ...records[idx], ...rec };
   else records.push(rec);
   save(SK.RECORDS, records);
+  void syncCurrentUserToCloud();
 }
 
 function todayKey() {
@@ -754,6 +782,60 @@ function load(key, def) {
 
 function save(key, val) {
   localStorage.setItem(key, JSON.stringify(val));
+}
+
+function getUserRecords(userId) {
+  return records.filter(r => r.userId === userId);
+}
+
+function replaceUserRecords(userId, nextUserRecords) {
+  records = records
+    .filter(r => r.userId !== userId)
+    .concat(nextUserRecords.map(r => ({ ...r, userId })));
+  save(SK.RECORDS, records);
+}
+
+async function syncCurrentUserToCloud() {
+  if (!session || !CFG.CLOUD_SYNC) return;
+  const user = users[session.userId];
+  if (!user) return;
+  await cloudWriteUser(session.userId, {
+    name: user.name,
+    password: user.password,
+    records: getUserRecords(session.userId),
+  });
+}
+
+function cloudKey(userId) {
+  return `attendance-tracker-v1-${String(userId).trim().toLowerCase()}`;
+}
+
+async function cloudReadUser(userId) {
+  if (!CFG.CLOUD_SYNC) return null;
+  const res = await fetch(`${CFG.CLOUD_BASE_URL}/${encodeURIComponent(cloudKey(userId))}`);
+  if (!res.ok) return null;
+  const payload = await res.json();
+  if (!payload || payload.result == null) return null;
+  return payload.result;
+}
+
+async function cloudWriteUser(userId, data) {
+  if (!CFG.CLOUD_SYNC) return;
+  const safe = {
+    name: data.name,
+    password: data.password,
+    records: Array.isArray(data.records) ? data.records : [],
+    updatedAt: new Date().toISOString(),
+  };
+  try {
+    await fetch(`${CFG.CLOUD_BASE_URL}/${encodeURIComponent(cloudKey(userId))}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(safe),
+    });
+  } catch (e) {
+    console.warn('Cloud write failed:', e);
+  }
 }
 
 // ── Start ─────────────────────────────────────────────────────────────────────
