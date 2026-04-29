@@ -186,7 +186,12 @@ async function handleLogin() {
 
   try {
     const existing = users[userId];
-    const cloudUser = await cloudReadUser(userId);
+    let cloudUser = null;
+    try {
+      cloudUser = await cloudReadUser(userId);
+    } catch (e) {
+      console.warn('Cloud sync unavailable during login. Continuing with local data.', e);
+    }
 
     if (cloudUser) {
       if (cloudUser.password !== password) { showError('Incorrect password.'); return; }
@@ -830,7 +835,8 @@ async function cloudWriteUser(userId, data) {
   try {
     await fetch(`${CFG.CLOUD_BASE_URL}/${encodeURIComponent(cloudKey(userId))}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      // text/plain avoids CORS preflight in stricter browser setups
+      headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
       body: JSON.stringify(safe),
     });
   } catch (e) {
