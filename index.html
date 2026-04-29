@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Attendance Tracker</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+
+  <!-- ── Toast Notification Banner (in-page fallback) ── -->
+  <div id="toastBar" class="toast-bar hidden">
+    <div class="toast-icon">🔔</div>
+    <div class="toast-body">
+      <strong id="toastTitle">Attendance Reminder</strong>
+      <span id="toastMsg">You haven't marked your attendance today.</span>
+    </div>
+    <div class="toast-actions">
+      <button id="toastClockIn" class="toast-btn-primary">Clock In Now</button>
+      <button id="toastDismiss" class="toast-btn-close">✕</button>
+    </div>
+  </div>
+
+  <!-- ── LOGIN ── -->
+  <section id="loginPage" class="page-center">
+    <div class="login-card">
+      <div class="login-brand">
+        <div class="brand-icon">📋</div>
+        <h1>Attendance Tracker</h1>
+        <p>Sign in to access your personal dashboard</p>
+      </div>
+      <div class="form-group">
+        <label>User ID</label>
+        <input id="loginId" type="text" placeholder="e.g. U1001" autocomplete="username" />
+      </div>
+      <div class="form-group">
+        <label>Full Name</label>
+        <input id="loginName" type="text" placeholder="e.g. Rohan Sharma" autocomplete="name" />
+      </div>
+      <div class="form-group">
+        <label>Password</label>
+        <div class="input-wrap">
+          <input id="loginPassword" type="password" placeholder="Min. 4 characters" autocomplete="current-password" />
+          <button class="eye-btn" id="togglePass" type="button">👁</button>
+        </div>
+      </div>
+      <p id="loginError" class="error-msg hidden"></p>
+      <button id="loginBtn" class="btn-primary full-btn">Login / Register</button>
+    </div>
+  </section>
+
+  <!-- ── DASHBOARD ── -->
+  <section id="dashPage" class="hidden">
+
+    <!-- Topbar -->
+    <header class="topbar">
+      <div class="topbar-left">
+        <span class="topbar-icon">📋</span>
+        <span class="topbar-title">Attendance Tracker</span>
+      </div>
+      <div class="topbar-right">
+        <button id="notifToggleBtn" class="notif-toggle-btn" title="Notification settings">🔔</button>
+        <span id="topbarUser" class="topbar-user"></span>
+        <button id="logoutBtn" class="btn-outline-sm">Logout</button>
+      </div>
+    </header>
+
+    <!-- Notification Permission Banner -->
+    <div id="notifBanner" class="notif-banner hidden">
+      <div class="notif-banner-left">
+        <span class="notif-banner-icon">🔔</span>
+        <div>
+          <strong>Enable Attendance Reminders</strong>
+          <p>Get a notification at 9:30 AM if you haven't marked attendance yet.</p>
+        </div>
+      </div>
+      <div class="notif-banner-right">
+        <button id="enableNotifBtn" class="btn-primary btn-sm">Enable Notifications</button>
+        <button id="dismissNotifBtn" class="btn-secondary btn-sm">Not Now</button>
+      </div>
+    </div>
+
+    <!-- Notification Status Bar -->
+    <div id="notifStatusBar" class="notif-status-bar hidden">
+      <span id="notifStatusText"></span>
+      <button id="notifSettingsBtn" class="notif-settings-link">Settings ›</button>
+    </div>
+
+    <main class="dash-container">
+
+      <!-- Stats -->
+      <div class="stats-row">
+        <div class="stat-card">
+          <div class="stat-num" id="s-present">0</div>
+          <div class="stat-label">Present Days</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-num" id="s-halfday">0</div>
+          <div class="stat-label">Half Days</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-num" id="s-leave">0</div>
+          <div class="stat-label">Leaves</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-num" id="s-late">0</div>
+          <div class="stat-label">Late Arrivals</div>
+        </div>
+        <div class="stat-card accent">
+          <div class="stat-num" id="s-points">0</div>
+          <div class="stat-label">Total Points</div>
+        </div>
+        <div class="stat-card accent2">
+          <div class="stat-num" id="s-pct">0%</div>
+          <div class="stat-label">Attendance %</div>
+        </div>
+      </div>
+
+      <!-- Today -->
+      <div class="card">
+        <div class="card-head">
+          <div>
+            <h2>⏱ Today's Attendance</h2>
+            <p id="todayDate" class="card-sub"></p>
+          </div>
+          <div id="todayBadge" class="status-badge badge-none">Not Marked</div>
+        </div>
+        <div class="today-grid">
+          <div class="info-item"><span class="info-label">In Time</span><span  id="ti-in"     class="info-val mono">—</span></div>
+          <div class="info-item"><span class="info-label">Out Time</span><span id="ti-out"    class="info-val mono">—</span></div>
+          <div class="info-item"><span class="info-label">Hours</span><span    id="ti-hours"  class="info-val mono">—</span></div>
+          <div class="info-item"><span class="info-label">Status</span><span   id="ti-status" class="info-val">—</span></div>
+          <div class="info-item"><span class="info-label">Points</span><span   id="ti-points" class="info-val">—</span></div>
+          <div class="info-item"><span class="info-label">Note</span><span     id="ti-note"   class="info-val">—</span></div>
+        </div>
+        <div class="action-row">
+          <button id="clockInBtn"   class="btn-primary">Clock In</button>
+          <button id="clockOutBtn"  class="btn-primary">Clock Out</button>
+          <button id="halfLeaveBtn" class="btn-secondary">First Half Leave</button>
+          <button id="leaveBtn"     class="btn-secondary">Full Day Leave</button>
+        </div>
+      </div>
+
+      <!-- Monthly -->
+      <div class="card">
+        <div class="card-head flex-wrap-gap">
+          <div>
+            <h2>📅 Monthly Records</h2>
+            <p class="card-sub">Full attendance history for the selected month.</p>
+          </div>
+          <div class="filter-row">
+            <input id="monthPicker" type="month" class="month-input" />
+            <input id="searchInput" type="text" placeholder="Search date, status…" class="search-input" />
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th><th>Day</th><th>In Time</th><th>Out Time</th>
+                <th>Hours</th><th>Late</th><th>Status</th><th>Points</th><th>Note</th>
+              </tr>
+            </thead>
+            <tbody id="historyBody"></tbody>
+          </table>
+        </div>
+        <div class="card-footer">
+          <button id="dlCsvBtn"  class="btn-secondary">↓ CSV</button>
+          <button id="dlXlsxBtn" class="btn-secondary">↓ Excel</button>
+          <button id="clearBtn"  class="btn-danger">✕ Clear Month</button>
+        </div>
+      </div>
+
+    </main>
+  </section>
+
+  <script src="app.js"></script>
+</body>
+</html>
